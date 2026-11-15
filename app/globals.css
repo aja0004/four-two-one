@@ -1,0 +1,108 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --ios-bg: #F2F2F7;
+  --ios-card: #FFFFFF;
+  --ios-elevated: #E5E5EA;
+  --ios-border: rgba(60, 60, 67, 0.12);
+  --ios-accent: #007AFF;
+  --ios-label: #000000;
+  --ios-secondary: rgba(60, 60, 67, 0.65);
+  --ios-tertiary: rgba(60, 60, 67, 0.35);
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ios-bg: #000000;
+    --ios-card: #1C1C1E;
+    --ios-elevated: #2C2C2E;
+    --ios-border: rgba(84, 84, 88, 0.45);
+    --ios-accent: #0A84FF;
+    --ios-label: #FFFFFF;
+    --ios-secondary: rgba(235, 235, 245, 0.65);
+    --ios-tertiary: rgba(235, 235, 245, 0.35);
+  }
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  background-color: var(--ios-bg);
+  color: var(--ios-label);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overscroll-behavior-y: none;
+  overflow-x: hidden;
+  max-width: 100vw;
+  width: 100%;
+}
+
+/* Prevent iOS Safari forced viewport zoom on focus */
+input,
+textarea,
+select {
+  font-size: 16px !important;
+}
+
+.pt-safe {
+  padding-top: max(0.75rem, env(safe-area-inset-top));
+}
+
+.pb-safe {
+  padding-bottom: max(1.25rem, env(safe-area-inset-bottom));
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.animate-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--ios-card) 25%,
+    var(--ios-elevated) 50%,
+    var(--ios-card) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite linear;
+}
+
+@keyframes coinFlip3D {
+  0% {
+    transform: perspective(300px) rotateY(0deg) scale(1);
+  }
+  50% {
+    transform: perspective(300px) rotateY(540deg) scale(1.18);
+  }
+  100% {
+    transform: perspective(300px) rotateY(1080deg) scale(1);
+  }
+}
+
+.animate-coin-flip {
+  animation: coinFlip3D 0.65s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
