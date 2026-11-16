@@ -25,8 +25,12 @@ export async function GET() {
     'your_supabase_service_role_key'
   );
 
+  const isCiMockSupabase = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').includes(
+    'mock-ci-project.supabase.co'
+  );
+
   let supabaseReachable: boolean | null = null;
-  if (isSupabaseConfigured) {
+  if (isSupabaseConfigured && !isCiMockSupabase) {
     const supabase = getServerSupabaseClient();
     if (supabase) {
       try {

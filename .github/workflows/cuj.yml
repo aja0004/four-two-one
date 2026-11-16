@@ -38,10 +38,12 @@ jobs:
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
 
-      - name: Run 5 Critical User Journey (CUJ) E2E tests
+      - name: Run Critical User Journey (CUJ) E2E tests
         env:
           # Optional: set PLAYWRIGHT_BASE_URL in GitHub Repo Variables to test against live Vercel URL
           PLAYWRIGHT_BASE_URL: ${{ vars.PLAYWRIGHT_BASE_URL }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL || 'https://mock-ci-project.supabase.co' }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'mock-ci-anon-key' }}
         run: npm run test:cuj
 
       - name: Check live Vercel /api/health (if PLAYWRIGHT_BASE_URL is set)
@@ -54,6 +56,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-cuj-report
+          if-no-files-found: ignore
           path: |
             playwright-report/
             test-results/
