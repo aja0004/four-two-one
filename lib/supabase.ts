@@ -868,20 +868,30 @@ export async function syncGameSession(
   if (!supabase) return true;
 
   const retryDelaysMs = [0, 350, 900];
+  let payloadToUpsert = stamped;
   for (let attempt = 0; attempt < retryDelaysMs.length; attempt++) {
     if (retryDelaysMs[attempt] > 0) {
       await new Promise((resolve) => setTimeout(resolve, retryDelaysMs[attempt]));
+      // Re-reconcile against cloud before retrying so an iOS wake-up retry never clobbers a newer turn!
+      const latestRemote = await fetchSessionById(payloadToUpsert.id);
+      if (latestRemote) {
+        payloadToUpsert = {
+          ...mergeSessionStates(latestRemote, payloadToUpsert),
+          updatedAt: new Date().toISOString(),
+        };
+        saveLocalSession(payloadToUpsert);
+      }
     }
     try {
       const { error } = await supabase.from('game_sessions').upsert(
         {
-          id: stamped.id,
-          household_id: stamped.householdId || HOUSEHOLD_ID,
-          room_code: stamped.roomCode,
-          play_mode: stamped.playMode,
-          phase: stamped.phase,
-          state: stamped,
-          updated_at: stamped.updatedAt,
+          id: payloadToUpsert.id,
+          household_id: payloadToUpsert.householdId || HOUSEHOLD_ID,
+          room_code: payloadToUpsert.roomCode,
+          play_mode: payloadToUpsert.playMode,
+          phase: payloadToUpsert.phase,
+          state: payloadToUpsert,
+          updated_at: payloadToUpsert.updatedAt,
         },
         { onConflict: 'id' }
       );

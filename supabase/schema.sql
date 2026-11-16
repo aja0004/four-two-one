@@ -1,5 +1,5 @@
 -- ============================================================================
--- 4-2-1 Dinner Decision App — Supabase Schema (Idempotent)
+-- 4-2-1 Dinner Decision App — Supabase Schema (Idempotent & Hardened)
 -- Paste this into your Supabase SQL Editor and click "Run"
 -- ============================================================================
 
@@ -81,52 +81,132 @@ create table if not exists public.api_usage_daily (
   updated_at timestamptz not null default now()
 );
 
--- Enable Row Level Security (permissive household-scoped anon policies for zero-login couple UX)
+-- 6. Atomic Quota Increment RPC (eliminates concurrent read-then-upsert race conditions)
+create or replace function public.increment_places_quota(
+  p_date date default current_date,
+  p_increment integer default 1,
+  p_limit integer default 200
+)
+returns table (
+  allowed boolean,
+  current_count integer
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_existing integer;
+  v_next integer;
+begin
+  if p_increment is null or p_increment < 1 then
+    raise exception 'p_increment must be >= 1';
+  end if;
+
+  insert into public.api_usage_daily (usage_date, places_search_count, updated_at)
+  values (p_date, 0, now())
+  on conflict (usage_date) do nothing;
+
+  select places_search_count
+    into v_existing
+    from public.api_usage_daily
+   where usage_date = p_date
+     for update;
+
+  if v_existing + p_increment > p_limit then
+    return query select false, v_existing;
+    return;
+  end if;
+
+  v_next := v_existing + p_increment;
+
+  update public.api_usage_daily
+     set places_search_count = v_next,
+         updated_at = now()
+   where usage_date = p_date;
+
+  return query select true, v_next;
+end;
+$$;
+
+grant execute on function public.increment_places_quota(date, integer, integer) to anon, authenticated, service_role;
+
+-- ============================================================================
+-- Hardened Row Level Security (Prevents mass DELETE wipes & quota tampering)
+-- ============================================================================
 alter table public.household_profiles enable row level security;
 alter table public.game_sessions enable row level security;
 alter table public.recent_winners enable row level security;
 alter table public.household_favorites enable row level security;
 alter table public.api_usage_daily enable row level security;
 
+-- Drop legacy overly-broad FOR ALL policies
 drop policy if exists "Allow anon access to household_profiles" on public.household_profiles;
-create policy "Allow anon access to household_profiles"
-  on public.household_profiles
-  for all
-  to anon, authenticated
-  using (true)
-  with check (true);
-
 drop policy if exists "Allow anon access to game_sessions" on public.game_sessions;
-create policy "Allow anon access to game_sessions"
-  on public.game_sessions
-  for all
-  to anon, authenticated
-  using (true)
-  with check (true);
-
 drop policy if exists "Allow anon access to recent_winners" on public.recent_winners;
-create policy "Allow anon access to recent_winners"
-  on public.recent_winners
-  for all
-  to anon, authenticated
-  using (true)
-  with check (true);
-
 drop policy if exists "Allow anon access to household_favorites" on public.household_favorites;
-create policy "Allow anon access to household_favorites"
-  on public.household_favorites
-  for all
-  to anon, authenticated
-  using (true)
-  with check (true);
-
 drop policy if exists "Allow anon access to api_usage_daily" on public.api_usage_daily;
-create policy "Allow anon access to api_usage_daily"
-  on public.api_usage_daily
-  for all
-  to anon, authenticated
-  using (true)
-  with check (true);
+
+-- household_profiles: SELECT, INSERT, UPDATE only (no anon DELETE)
+drop policy if exists "household_profiles_select" on public.household_profiles;
+create policy "household_profiles_select"
+  on public.household_profiles for select to anon, authenticated using (true);
+
+drop policy if exists "household_profiles_insert" on public.household_profiles;
+create policy "household_profiles_insert"
+  on public.household_profiles for insert to anon, authenticated with check (length(household_id) > 0);
+
+drop policy if exists "household_profiles_update" on public.household_profiles;
+create policy "household_profiles_update"
+  on public.household_profiles for update to anon, authenticated using (true) with check (length(household_id) > 0);
+
+-- game_sessions: SELECT, INSERT, UPDATE only (no anon DELETE)
+drop policy if exists "game_sessions_select" on public.game_sessions;
+create policy "game_sessions_select"
+  on public.game_sessions for select to anon, authenticated using (true);
+
+drop policy if exists "game_sessions_insert" on public.game_sessions;
+create policy "game_sessions_insert"
+  on public.game_sessions for insert to anon, authenticated with check (length(room_code) >= 4);
+
+drop policy if exists "game_sessions_update" on public.game_sessions;
+create policy "game_sessions_update"
+  on public.game_sessions for update to anon, authenticated using (true) with check (length(room_code) >= 4);
+
+-- recent_winners: SELECT, INSERT, UPDATE only (no anon DELETE)
+drop policy if exists "recent_winners_select" on public.recent_winners;
+create policy "recent_winners_select"
+  on public.recent_winners for select to anon, authenticated using (true);
+
+drop policy if exists "recent_winners_insert" on public.recent_winners;
+create policy "recent_winners_insert"
+  on public.recent_winners for insert to anon, authenticated with check (length(place_id) > 0);
+
+drop policy if exists "recent_winners_update" on public.recent_winners;
+create policy "recent_winners_update"
+  on public.recent_winners for update to anon, authenticated using (true) with check (length(place_id) > 0);
+
+-- household_favorites: SELECT, INSERT, UPDATE, and single-row DELETE for un-favoriting
+drop policy if exists "household_favorites_select" on public.household_favorites;
+create policy "household_favorites_select"
+  on public.household_favorites for select to anon, authenticated using (true);
+
+drop policy if exists "household_favorites_insert" on public.household_favorites;
+create policy "household_favorites_insert"
+  on public.household_favorites for insert to anon, authenticated with check (length(place_id) > 0);
+
+drop policy if exists "household_favorites_update" on public.household_favorites;
+create policy "household_favorites_update"
+  on public.household_favorites for update to anon, authenticated using (true) with check (length(place_id) > 0);
+
+drop policy if exists "household_favorites_delete" on public.household_favorites;
+create policy "household_favorites_delete"
+  on public.household_favorites for delete to anon, authenticated using (length(place_id) > 0);
+
+-- api_usage_daily: Read-only for anon; mutations strictly via increment_places_quota() RPC or service_role
+drop policy if exists "api_usage_daily_select" on public.api_usage_daily;
+create policy "api_usage_daily_select"
+  on public.api_usage_daily for select to anon, authenticated using (true);
 
 -- Enable Realtime on game_sessions safely (idempotent check)
 do $$

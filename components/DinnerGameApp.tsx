@@ -273,6 +273,9 @@ export function DinnerGameApp({ initialRoomCode }: DinnerGameAppProps) {
 
   const [session, setSession] = useState<GameSessionState | null>(null);
   const [deviceRole, setDeviceRole] = useState<PlayerRole>('user1');
+  const [isResolvingInitialRoom, setIsResolvingInitialRoom] = useState<boolean>(
+    Boolean(initialRoomCode)
+  );
 
   // Local UI states for active game phases (Stage 4 keep & reroll state)
   const [keptFourIds, setKeptFourIds] = useState<string[]>([]);
@@ -575,50 +578,57 @@ export function DinnerGameApp({ initialRoomCode }: DinnerGameAppProps) {
       // If opened via /room/[code], auto-join that room safely (without clobbering concurrent turns!)
       if (initialRoomCode && !hasHandledInitialRoomRef.current) {
         hasHandledInitialRoomRef.current = true;
-        const found = await fetchSessionByRoomCode(initialRoomCode);
-        if (found) {
-          const mySavedName = (getDeviceOwnerName() || '').trim();
-          const myNameLower = mySavedName.toLowerCase();
-          const inferredRole: PlayerRole | null = myNameLower
-            ? found.user1Name.trim().toLowerCase() === myNameLower
-              ? 'user1'
-              : found.user2Name.trim().toLowerCase() === myNameLower
-              ? 'user2'
-              : null
-            : null;
-          const savedRole =
-            getDeviceRoleForSession(found.id) || inferredRole || 'user2';
+        try {
+          const found = await fetchSessionByRoomCode(initialRoomCode);
+          if (found) {
+            const mySavedName = (getDeviceOwnerName() || '').trim();
+            const myNameLower = mySavedName.toLowerCase();
+            const inferredRole: PlayerRole | null = myNameLower
+              ? found.user1Name.trim().toLowerCase() === myNameLower
+                ? 'user1'
+                : found.user2Name.trim().toLowerCase() === myNameLower
+                ? 'user2'
+                : null
+              : null;
+            const savedRole =
+              getDeviceRoleForSession(found.id) || inferredRole || 'user2';
 
-          let joinedSession = found;
-          if (mySavedName) {
-            joinedSession = await joinSessionPlayerSafely({
-              sessionId: found.id,
-              fallbackSession: found,
-              role: savedRole,
-              playerName: mySavedName,
-              localFavorites: favs,
-            });
-            const otherPlayerName =
-              savedRole === 'user1'
-                ? joinedSession.user2Name
-                : joinedSession.user1Name;
-            if (otherPlayerName && !isPlaceholderPartnerName(otherPlayerName)) {
-              setRecentPartners(addRecentPartner(otherPlayerName, mySavedName));
+            let joinedSession = found;
+            if (mySavedName) {
+              joinedSession = await joinSessionPlayerSafely({
+                sessionId: found.id,
+                fallbackSession: found,
+                role: savedRole,
+                playerName: mySavedName,
+                localFavorites: favs,
+              });
+              const otherPlayerName =
+                savedRole === 'user1'
+                  ? joinedSession.user2Name
+                  : joinedSession.user1Name;
+              if (
+                otherPlayerName &&
+                !isPlaceholderPartnerName(otherPlayerName)
+              ) {
+                setRecentPartners(addRecentPartner(otherPlayerName, mySavedName));
+              }
             }
-          }
 
-          saveDeviceRoleForSession(joinedSession.id, savedRole);
-          setDeviceRole(savedRole);
-          setLocation(joinedSession.location);
-          if (Array.isArray(joinedSession.keptPlaceIds)) {
-            setKeptFourIds(joinedSession.keptPlaceIds);
+            saveDeviceRoleForSession(joinedSession.id, savedRole);
+            setDeviceRole(savedRole);
+            setLocation(joinedSession.location);
+            if (Array.isArray(joinedSession.keptPlaceIds)) {
+              setKeptFourIds(joinedSession.keptPlaceIds);
+            }
+            sessionRef.current = joinedSession;
+            setSession(joinedSession);
+            saveLocalSession(joinedSession);
+            return;
+          } else if (typeof window !== 'undefined') {
+            window.history.replaceState(window.history.state, '', '/');
           }
-          sessionRef.current = joinedSession;
-          setSession(joinedSession);
-          saveLocalSession(joinedSession);
-          return;
-        } else if (typeof window !== 'undefined') {
-          window.history.replaceState(window.history.state, '', '/');
+        } finally {
+          setIsResolvingInitialRoom(false);
         }
       }
 
@@ -1906,6 +1916,20 @@ export function DinnerGameApp({ initialRoomCode }: DinnerGameAppProps) {
       setFavorites(updated);
     }
   };
+
+  // RENDER 0: JOINING SHARED ROOM LINK LOADING STATE (prevents flashing SetupScreen onboarding modal)
+  if (isResolvingInitialRoom && !session) {
+    return (
+      <main className="flex min-h-[100dvh] w-full flex-col items-center justify-center bg-ios-bg px-4 text-center">
+        <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-ios-border bg-ios-card shadow-sm">
+          <Loader2 className="h-6 w-6 animate-spin text-ios-accent" />
+        </div>
+        <p className="mt-4 text-sm font-semibold text-ios-label">
+          Joining live room #{initialRoomCode}…
+        </p>
+      </main>
+    );
+  }
 
   // RENDER 1: SETUP SCREEN
   if (!session || session.phase === 'SETUP') {

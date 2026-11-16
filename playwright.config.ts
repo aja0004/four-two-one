@@ -1,7 +1,11 @@
+import fs from 'node:fs';
 import { defineConfig, devices } from '@playwright/test';
 
 const CHROME_PATH =
   '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+
+const useLocalChrome = !process.env.CI && fs.existsSync(CHROME_PATH);
+const externalBaseUrl = process.env.PLAYWRIGHT_BASE_URL?.trim();
 
 export default defineConfig({
   testDir: './tests/cujs',
@@ -12,12 +16,12 @@ export default defineConfig({
   timeout: 30_000,
   reporter: [['list'], ['html', { open: 'never' }]],
   use: {
-    baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:3100',
+    baseURL: externalBaseUrl || 'http://localhost:3100',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     viewport: { width: 390, height: 844 }, // iPhone 14/15 viewport
     launchOptions: {
-      executablePath: process.env.CI ? undefined : CHROME_PATH,
+      executablePath: useLocalChrome ? CHROME_PATH : undefined,
     },
   },
   projects: [
@@ -29,10 +33,12 @@ export default defineConfig({
       },
     },
   ],
-  webServer: {
-    command: 'npx next dev --port 3100',
-    url: 'http://localhost:3100',
-    reuseExistingServer: !process.env.CI,
-    timeout: 60_000,
-  },
+  webServer: externalBaseUrl
+    ? undefined
+    : {
+        command: 'npx next dev --port 3100',
+        url: 'http://localhost:3100',
+        reuseExistingServer: !process.env.CI,
+        timeout: 90_000,
+      },
 });

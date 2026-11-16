@@ -437,7 +437,15 @@ test.describe('4-2-1 Top 5 Critical User Journeys (CUJs)', () => {
 
   test('CUJ 5: API Resilience — Manual Geocode Fallback & Pool Exhaustion Recovery', async ({
     page,
+    request,
   }) => {
+    // 0. Verify `/api/health` cloud readiness endpoint responds cleanly without consuming quota
+    const healthRes = await request.get('/api/health');
+    expect(healthRes.status()).toBeLessThan(600);
+    const healthJson = await healthRes.json();
+    expect(healthJson).toHaveProperty('status');
+    expect(healthJson).toHaveProperty('placesQuota');
+
     await seedPlayerDevice(page, {
       ownerName: 'Alex',
       recentPartners: ['Lauren'],

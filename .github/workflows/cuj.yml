@@ -1,0 +1,60 @@
+name: 4-2-1 CI & Daily CUJs
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Runs every day at 09:00 UTC in the cloud (even when local computer is off)
+    - cron: '0 9 * * *'
+  workflow_dispatch:
+
+jobs:
+  verify-and-test-cujs:
+    name: Typecheck, Build & Playwright CUJs
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run TypeScript typecheck
+        run: npm run typecheck
+
+      - name: Verify Next.js production build
+        run: npm run build
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run 5 Critical User Journey (CUJ) E2E tests
+        env:
+          # Optional: set PLAYWRIGHT_BASE_URL in GitHub Repo Variables to test against live Vercel URL
+          PLAYWRIGHT_BASE_URL: ${{ vars.PLAYWRIGHT_BASE_URL }}
+        run: npm run test:cuj
+
+      - name: Check live Vercel /api/health (if PLAYWRIGHT_BASE_URL is set)
+        if: ${{ vars.PLAYWRIGHT_BASE_URL != '' }}
+        run: |
+          curl --fail --silent --show-error "${{ vars.PLAYWRIGHT_BASE_URL }}/api/health" | tee health.json
+
+      - name: Upload Playwright report & traces on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-cuj-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
